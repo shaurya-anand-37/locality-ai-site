@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Eco-Aware Map</title>
+  <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; }
+    #map { height: 400px; width: 100%; margin-bottom: 20px; }
+    input, button { padding: 10px; margin: 10px 0; }
+    .results { margin-top: 20px; }
+  </style>
+</head>
+<body>
+  <h1>Eco-Aware Locality Dashboard</h1>
+  <input type="text" id="locality" placeholder="Enter a locality" />
+  <button onclick="getLocalityData()">Search</button>
+
+  <div id="map"></div>
+  <div class="results">
+    <h2>Top 5 Ecological Issues</h2>
+    <ul id="issues"></ul>
+
+    <h2>Suggested Solutions</h2>
+    <ul id="solutions"></ul>
+  </div>
+
+  <script>
+    const openWeatherKey = '22d8a447fe1a5af405185d5cb1d30cd1';
+    const geminiKey = 'AIzaSyDjfWMpvykQIxYHQ7UOBn1ofKfJSeH6XmA';
+
+    async function getLocalityData() {
+      const locality = document.getElementById('locality').value;
+      if (!locality) return;
+
+      try {
+        // 1. Geocode to get coordinates
+        const geoRes = await axios.get(`https://api.openweathermap.org/geo/1.0/direct?q=${locality}&limit=1&appid=${openWeatherKey}`);
+        const { lat, lon } = geoRes.data[0];
+
+        // 2. Display map using OpenWeather Map layer or Leaflet
+        document.getElementById('map').innerHTML = `<iframe width="100%" height="400" src="https://maps.google.com/maps?q=${lat},${lon}&z=13&output=embed"></iframe>`;
+
+        // 3. Get AQI data from OpenAQ
+        const aqRes = await axios.get(`https://api.openaq.org/v2/latest?coordinates=${lat},${lon}`);
+        const issues = [];
+
+        if (aqRes.data.results.length > 0) {
+          const measurements = aqRes.data.results[0].measurements;
+          measurements.forEach(m => {
+            if (m.value > m.threshold || m.parameter === 'pm25' || m.parameter === 'pm10') {
+              issues.push(`${m.parameter.toUpperCase()} level is ${m.value} ${m.unit}`);
+            }
+          });
+        }
+
+        // Dummy problems if less than 5
+        while (issues.length < 5) {
+          if (!issues.includes("Low groundwater levels detected")) issues.push("Low groundwater levels detected");
+          if (!issues.includes("Deforestation signs in the area")) issues.push("Deforestation signs in the area");
+          if (!issues.includes("High carbon emissions")) issues.push("High carbon emissions");
+          if (!issues.includes("Urban heat island effect")) issues.push("Urban heat island effect");
+          if (!issues.includes("Loss of biodiversity")) issues.push("Loss of biodiversity");
+        }
+
+        document.getElementById('issues').innerHTML = issues.slice(0, 5).map(issue => `<li>${issue}</li>`).join('');
+
+        // 4. Generate solutions using Gemini AI API
+        const prompt = `Suggest eco-solutions for the following issues in ${locality}: ${issues.slice(0, 5).join(', ')}`;
+
+        const geminiRes = await axios.post(
+          'https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=' + geminiKey,
+          {
+            contents: [{ parts: [{ text: prompt }] }]
+          },
+          {
+            headers: {
+              'Content-Type': 'application/json'
+            }
+          }
+        );
+
+        const solutionText = geminiRes.data.candidates[0].content.parts[0].text;
+        const solutionItems = solutionText.split('\n').filter(line => line.trim()).map(item => `<li>${item}</li>`);
+        document.getElementById('solutions').innerHTML = solutionItems.join('');
+
+      } catch (err) {
+        console.error(err);
+        alert('Error fetching data. Check the console for details.');
+      }
+    }
+  </script>
+</body>
+</html>
